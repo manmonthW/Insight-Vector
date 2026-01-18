@@ -70,17 +70,26 @@ const Visualizer: React.FC<Props> = ({
     }));
 
     const defs = svg.append('defs');
+    
+    // Standard Glow
     const filter = defs.append('filter').attr('id', 'glow');
     filter.append('feGaussianBlur').attr('stdDeviation', '3.5').attr('result', 'coloredBlur');
     const feMerge = filter.append('feMerge');
     feMerge.append('feMergeNode').attr('in', 'coloredBlur');
     feMerge.append('feMergeNode').attr('in', 'SourceGraphic');
 
+    // Enhanced Hover Glow
+    const hoverFilter = defs.append('filter').attr('id', 'hoverGlow');
+    hoverFilter.append('feGaussianBlur').attr('stdDeviation', '6').attr('result', 'coloredBlur');
+    const feMergeHover = hoverFilter.append('feMerge');
+    feMergeHover.append('feMergeNode').attr('in', 'coloredBlur');
+    feMergeHover.append('feMergeNode').attr('in', 'SourceGraphic');
+
     const simulation = d3.forceSimulation<D3Node>(nodes)
-      .force('link', d3.forceLink<D3Node, D3Link>(links).id(d => d.id).distance(isCompressing ? 10 : 220))
-      .force('charge', d3.forceManyBody().strength(isCompressing ? -5 : -800))
+      .force('link', d3.forceLink<D3Node, D3Link>(links).id(d => d.id).distance(isCompressing ? 10 : 250))
+      .force('charge', d3.forceManyBody().strength(isCompressing ? -5 : -1000))
       .force('center', d3.forceCenter(width / 2, height / 2))
-      .force('collision', d3.forceCollide().radius(80))
+      .force('collision', d3.forceCollide().radius(100))
       .on('tick', () => {
         link
           .attr('x1', d => (d.source as D3Node).x!)
@@ -125,11 +134,10 @@ const Visualizer: React.FC<Props> = ({
         })
       );
 
-    node.append('circle')
-      .attr('r', d => d.type === 'center' ? 22 : 12)
+    const circle = node.append('circle')
+      .attr('r', d => d.type === 'center' ? 24 : 14)
       .attr('fill', d => {
         if (d.type === 'center') return '#10b981';
-        // Highlight nodes that have already been explored in the forest
         if (forest?.insightCache[d.label]) return '#10b981';
         return '#064e3b';
       })
@@ -144,18 +152,71 @@ const Visualizer: React.FC<Props> = ({
         return '#064e3b';
       })
       .attr('stroke-width', d => forest?.insightCache[d.label] ? 3 : 2)
-      .attr('class', d => d.type === 'vector' && canDrillDown ? 'hover:fill-emerald-400 hover:stroke-emerald-200 transition-all duration-300' : '')
-      .style('filter', 'url(#glow)');
+      .style('filter', 'url(#glow)')
+      .style('transition', 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)')
+      .style('transform-origin', 'center')
+      .style('transform-box', 'fill-box');
 
-    // Text label
-    node.append('text')
-      .text(d => d.label)
-      .attr('dy', d => d.type === 'center' ? 50 : 40)
-      .attr('text-anchor', 'middle')
-      .attr('fill', '#f1f5f9')
-      .attr('font-size', d => d.type === 'center' ? '18px' : '13px')
-      .attr('font-weight', d => d.type === 'center' ? 'bold' : '500')
-      .attr('class', 'tracking-wider pointer-events-none drop-shadow-lg select-none');
+    node.on('mouseenter', function() {
+      d3.select(this).select('circle')
+        .attr('fill-opacity', 0.9)
+        .style('filter', 'url(#hoverGlow)')
+        .style('transform', 'scale(1.2)');
+      
+      d3.select(this).selectAll('text')
+        .style('transition', 'all 0.3s ease')
+        .attr('font-weight', 'bold')
+        .attr('fill', '#ffffff');
+    })
+    .on('mouseleave', function(event, d: any) {
+      d3.select(this).select('circle')
+        .attr('fill-opacity', d.type === 'center' ? 0.8 : (forest?.insightCache[d.label] ? 0.6 : 0.4))
+        .style('filter', 'url(#glow)')
+        .style('transform', 'scale(1)');
+      
+      d3.select(this).selectAll('text')
+        .attr('font-weight', d.type === 'center' ? 'bold' : '500')
+        .attr('fill', '#f1f5f9');
+    });
+
+    // Text label rendering logic
+    node.each(function(d) {
+      const el = d3.select(this);
+      const isBilingual = d.label.includes('(') && d.label.includes(')');
+      
+      if (isBilingual && d.type === 'vector') {
+        const parts = d.label.split('(');
+        const chinese = parts[0].trim();
+        const english = '(' + parts[1].trim();
+        
+        el.append('text')
+          .text(chinese)
+          .attr('dy', 45)
+          .attr('text-anchor', 'middle')
+          .attr('fill', '#f1f5f9')
+          .attr('font-size', '13px')
+          .attr('font-weight', '600')
+          .attr('class', 'tracking-wide pointer-events-none drop-shadow-lg select-none');
+          
+        el.append('text')
+          .text(english)
+          .attr('dy', 58)
+          .attr('text-anchor', 'middle')
+          .attr('fill', '#94a3b8')
+          .attr('font-size', '10px')
+          .attr('font-weight', '400')
+          .attr('class', 'pointer-events-none select-none italic');
+      } else {
+        el.append('text')
+          .text(d.label)
+          .attr('dy', d.type === 'center' ? 55 : 45)
+          .attr('text-anchor', 'middle')
+          .attr('fill', '#f1f5f9')
+          .attr('font-size', d.type === 'center' ? '18px' : '13px')
+          .attr('font-weight', d.type === 'center' ? 'bold' : '500')
+          .attr('class', 'tracking-wider pointer-events-none drop-shadow-lg select-none');
+      }
+    });
 
     // Status indicator for explored nodes
     node.filter(d => d.type === 'vector' && forest?.insightCache[d.label] !== undefined)
@@ -168,8 +229,8 @@ const Visualizer: React.FC<Props> = ({
     if (canDrillDown) {
        node.filter(d => d.type === 'vector')
         .append('text')
-        .text(d => forest?.insightCache[d.label] ? '已解构' : '○ 钻取')
-        .attr('dy', 55)
+        .text(d => forest?.insightCache[d.label] ? '✓ 已解构' : '○ 钻取分析')
+        .attr('dy', 75)
         .attr('text-anchor', 'middle')
         .attr('fill', d => forest?.insightCache[d.label] ? '#34d399' : '#10b981')
         .attr('font-size', '9px')

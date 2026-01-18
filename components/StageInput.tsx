@@ -3,13 +3,16 @@ import React, { useState } from 'react';
 
 interface Props {
   onSubmit: (input: string) => void;
+  history?: any[];
+  onLoadHistory?: (session: any) => void;
+  onClearHistory?: () => void;
 }
 
-const StageInput: React.FC<Props> = ({ onSubmit }) => {
+const StageInput: React.FC<Props> = ({ onSubmit, history = [], onLoadHistory, onClearHistory }) => {
   const [input, setInput] = useState('');
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] px-4 text-center max-w-4xl mx-auto">
+    <div className="flex flex-col items-center justify-start min-h-[80vh] px-4 text-center max-w-4xl mx-auto pt-12 md:pt-20">
       <h1 className="text-4xl md:text-6xl font-bold mb-6 tracking-tight">
         维度罗盘 <span className="text-emerald-500">/ Insight Vector</span>
       </h1>
@@ -18,7 +21,7 @@ const StageInput: React.FC<Props> = ({ onSubmit }) => {
         <span className="text-emerald-400 font-medium"> 压缩至第一性原理</span>。
       </p>
 
-      <div className="w-full relative group">
+      <div className="w-full relative group mb-8">
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -31,7 +34,7 @@ const StageInput: React.FC<Props> = ({ onSubmit }) => {
       <button
         onClick={() => input.trim() && onSubmit(input)}
         disabled={!input.trim()}
-        className="mt-8 px-10 py-4 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-600 text-white rounded-xl font-bold text-lg transition-all shadow-lg hover:shadow-emerald-500/20 active:scale-95 flex items-center gap-2 group"
+        className="px-10 py-4 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-600 text-white rounded-xl font-bold text-lg transition-all shadow-lg hover:shadow-emerald-500/20 active:scale-95 flex items-center gap-2 group mb-16"
       >
         <span>开启解构 / Deconstruct</span>
         <svg 
@@ -42,7 +45,48 @@ const StageInput: React.FC<Props> = ({ onSubmit }) => {
         </svg>
       </button>
 
-      <div className="mt-16 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs mono uppercase tracking-widest text-slate-500">
+      {history.length > 0 && (
+        <div className="w-full text-left animate-in fade-in slide-in-from-bottom-4 duration-700">
+           <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-2">
+              <h2 className="text-xs font-bold text-slate-500 uppercase tracking-[0.3em]">最近的探索 / RECENT</h2>
+              <button 
+                onClick={onClearHistory}
+                className="text-[10px] text-slate-600 hover:text-red-400 transition-colors uppercase tracking-widest font-mono"
+              >
+                Clear History
+              </button>
+           </div>
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {history.map((session) => (
+                <button
+                  key={session.id}
+                  onClick={() => onLoadHistory?.(session)}
+                  className="group text-left p-4 rounded-xl border border-white/5 bg-slate-900/30 hover:bg-emerald-500/5 hover:border-emerald-500/20 transition-all active:scale-[0.98]"
+                >
+                  <div className="flex justify-between items-start mb-1">
+                    <span className="text-sm font-medium text-slate-300 group-hover:text-emerald-400 transition-colors line-clamp-1">
+                      {session.rootKeyword}
+                    </span>
+                    <span className="text-[9px] font-mono text-slate-600 shrink-0">
+                      {new Date(session.timestamp).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <div className="flex gap-1 overflow-hidden h-4 items-center">
+                    {session.path.slice(1).map((p: string, i: number) => (
+                      <React.Fragment key={i}>
+                        <span className="text-[8px] text-slate-700">→</span>
+                        <span className="text-[9px] text-slate-500 line-clamp-1">{p}</span>
+                      </React.Fragment>
+                    ))}
+                    <span className="text-[9px] text-emerald-500/40 ml-auto font-mono">L{session.path.length}</span>
+                  </div>
+                </button>
+              ))}
+           </div>
+        </div>
+      )}
+
+      <div className="mt-auto py-12 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs mono uppercase tracking-widest text-slate-500">
         <div className="flex flex-col items-center gap-2">
           <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)]"></div>
           向量化

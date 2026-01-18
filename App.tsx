@@ -7,7 +7,16 @@ import Visualizer from './components/Visualizer';
 
 type TabType = 'map' | 'data' | 'principle' | 'metaphor';
 
+interface SavedSession {
+  id: string;
+  rootKeyword: string;
+  timestamp: number;
+  cache: Record<string, InsightResult>;
+  path: string[];
+}
+
 const MAX_DEPTH = 3;
+const HISTORY_KEY = 'insight_vector_history_v1';
 
 const App: React.FC = () => {
   const [stage, setStage] = useState<Stage>(Stage.INPUT);
@@ -16,18 +25,68 @@ const App: React.FC = () => {
   const [showTabs, setShowTabs] = useState(false);
   const [selectedVectorId, setSelectedVectorId] = useState<string | null>(null);
 
-  // History tracks the path of exploration
+  // History tracks the current path of exploration
   const [path, setPath] = useState<string[]>([]);
   // Cache stores the results for every explored keyword to allow "free expansion"
   const [insightCache, setInsightCache] = useState<Record<string, InsightResult>>({});
+  // Local persistent history of all sessions
+  const [savedSessions, setSavedSessions] = useState<SavedSession[]>([]);
 
   const currentKeyword = path[path.length - 1];
   const result = insightCache[currentKeyword];
   const depth = path.length;
 
+  // Load history from localStorage on mount
+  useEffect(() => {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    if (raw) {
+      try {
+        setSavedSessions(JSON.parse(raw));
+      } catch (e) {
+        console.error("Failed to load history", e);
+      }
+    }
+  }, []);
+
+  // Save a session to persistent history
+  const saveToHistory = useCallback((rootKeyword: string, cache: Record<string, InsightResult>, currentPath: string[]) => {
+    setSavedSessions(prev => {
+      const existingIdx = prev.findIndex(s => s.rootKeyword === rootKeyword);
+      const newSession: SavedSession = {
+        id: existingIdx !== -1 ? prev[existingIdx].id : Math.random().toString(36).substr(2, 9),
+        rootKeyword,
+        timestamp: Date.now(),
+        cache,
+        path: currentPath
+      };
+
+      let next;
+      if (existingIdx !== -1) {
+        next = [newSession, ...prev.filter((_, i) => i !== existingIdx)];
+      } else {
+        next = [newSession, ...prev].slice(0, 10); // Keep last 10
+      }
+      
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const clearHistory = () => {
+    localStorage.removeItem(HISTORY_KEY);
+    setSavedSessions([]);
+  };
+
+  const loadSession = (session: SavedSession) => {
+    setInsightCache(session.cache);
+    setPath(session.path);
+    setStage(Stage.METAPHOR);
+    setShowTabs(true);
+    setActiveTab('map');
+  };
+
   const cleanAIString = (str: string, prefix: string) => {
     if (!str) return '';
-    // Strip prefixes and suffix logic often added by AI models
     let cleaned = str.replace(new RegExp(`^${prefix}`, 'i'), '');
     cleaned = cleaned.replace(/^[:：\s]+/, '');
     cleaned = cleaned.replace(/一样思考[。！]?$/, '');
@@ -37,10 +96,12 @@ const App: React.FC = () => {
 
   const processProblem = async (input: string, isDrillDown = false) => {
     if (insightCache[input]) {
-      setPath(prev => isDrillDown ? [...prev, input] : [input]);
+      const newPath = isDrillDown ? [...path, input] : [input];
+      setPath(newPath);
       setStage(Stage.METAPHOR);
       setShowTabs(true);
       setActiveTab('map');
+      saveToHistory(newPath[0], insightCache, newPath);
       return;
     }
 
@@ -53,14 +114,18 @@ const App: React.FC = () => {
     try {
       const data = await getInsight(input, context);
       
-      setInsightCache(prev => ({ ...prev, [input]: data }));
-      setPath(prev => isDrillDown ? [...prev, input] : [input]);
+      const newCache = { ...insightCache, [input]: data };
+      const newPath = isDrillDown ? [...path, input] : [input];
+      
+      setInsightCache(newCache);
+      setPath(newPath);
       
       setTimeout(() => {
         if (isDrillDown) {
           setStage(Stage.METAPHOR);
           setShowTabs(true);
           setActiveTab('map');
+          saveToHistory(newPath[0], newCache, newPath);
         } else {
           setStage(Stage.MAPPING);
         }
@@ -83,6 +148,7 @@ const App: React.FC = () => {
     setPath(newPath);
     setStage(Stage.METAPHOR);
     setActiveTab('map');
+    saveToHistory(newPath[0], insightCache, newPath);
   };
 
   useEffect(() => {
@@ -100,8 +166,9 @@ const App: React.FC = () => {
       setStage(Stage.METAPHOR);
       setShowTabs(true);
       setActiveTab('metaphor');
+      saveToHistory(path[0], insightCache, path);
     }, 2500);
-  }, []);
+  }, [path, insightCache, saveToHistory]);
 
   const selectedVector = result?.vectors.find(v => v.id === selectedVectorId);
 
@@ -313,7 +380,14 @@ const App: React.FC = () => {
       </header>
 
       <main className="flex-1 relative z-10 px-4 md:px-8 py-8 flex flex-col">
-        {stage === Stage.INPUT && <StageInput onSubmit={processProblem} />}
+        {stage === Stage.INPUT && (
+          <StageInput 
+            onSubmit={processProblem} 
+            history={savedSessions} 
+            onLoadHistory={loadSession}
+            onClearHistory={clearHistory}
+          />
+        )}
 
         {stage === Stage.VECTORIZING && (
           <div className="flex flex-col items-center justify-center flex-1">
